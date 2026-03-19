@@ -86,15 +86,34 @@ class MiniKotlinCompiler : MiniKotlinBaseVisitor<String>() {
         {
             return convertVariableDeclaration(statement.variableDeclaration())
         }
+        if (statement.returnStatement() != null)
+        {
+            return convertReturn(statement.returnStatement())
+        }
 
         return ";"
     }
 
     fun convertVariableDeclaration(variableDeclaration: MiniKotlinParser.VariableDeclarationContext): String {
-        var type = convertType(variableDeclaration.type())
-        var name = variableDeclaration.IDENTIFIER().text
-        var expression = variableDeclaration.expression().text
+        val type = convertType(variableDeclaration.type())
+        val name = variableDeclaration.IDENTIFIER().text
+        val expression = variableDeclaration.expression().text
 
         return "$type $name = ($expression);"
+    }
+
+    fun convertReturn(returnStatement: MiniKotlinParser.ReturnStatementContext): String {
+        if (returnStatement.expression() == null)
+        {
+            return """__continuation.accept(null);
+                return;
+            """.trimMargin()
+        }
+
+        val expression = returnStatement.expression().text
+
+        return """__continuation.accept($expression);
+            return;
+        """.trimMargin()
     }
 }
