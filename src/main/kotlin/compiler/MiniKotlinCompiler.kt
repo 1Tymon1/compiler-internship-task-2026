@@ -90,6 +90,10 @@ class MiniKotlinCompiler : MiniKotlinBaseVisitor<String>() {
         {
             return convertReturn(statement.returnStatement())
         }
+        if (statement.expression() != null)
+        {
+            return convertExpressionStatement(statement.expression())
+        }
 
         return ";"
     }
@@ -97,9 +101,8 @@ class MiniKotlinCompiler : MiniKotlinBaseVisitor<String>() {
     fun convertVariableDeclaration(variableDeclaration: MiniKotlinParser.VariableDeclarationContext): String {
         val type = convertType(variableDeclaration.type())
         val name = variableDeclaration.IDENTIFIER().text
-        val expression = variableDeclaration.expression().text
 
-        return "$type $name = ($expression);"
+        return "$type $name = ${convertExpressionStatement(variableDeclaration.expression())};"
     }
 
     fun convertReturn(returnStatement: MiniKotlinParser.ReturnStatementContext): String {
@@ -110,10 +113,109 @@ class MiniKotlinCompiler : MiniKotlinBaseVisitor<String>() {
             """.trimMargin()
         }
 
-        val expression = returnStatement.expression().text
-
-        return """__continuation.accept($expression);
+        return """__continuation.accept(${convertExpressionStatement(returnStatement.expression())});
             return;
         """.trimMargin()
+    }
+
+    fun convertExpressionStatement(expression: MiniKotlinParser.ExpressionContext): String {
+        if (containsFunctionCall(expression))
+        {
+            return convertComplexExpression(expression)
+        }
+        else
+        {
+            return convertSimpleExpression(expression)
+        }
+    }
+
+    fun containsFunctionCall(expression: MiniKotlinParser.ExpressionContext) : Boolean {
+        if (expression is MiniKotlinParser.FunctionCallExprContext) return true
+        if (expression is MiniKotlinParser.PrimaryExprContext) return false
+        if (expression is MiniKotlinParser.NotExprContext) return containsFunctionCall(expression.expression())
+        if (expression is MiniKotlinParser.AddSubExprContext) return (containsFunctionCall(expression.expression(0)) || containsFunctionCall(expression.expression(1)))
+        if (expression is MiniKotlinParser.MulDivExprContext) return (containsFunctionCall(expression.expression(0)) || containsFunctionCall(expression.expression(1)))
+        if (expression is MiniKotlinParser.ComparisonExprContext) return (containsFunctionCall(expression.expression(0)) || containsFunctionCall(expression.expression(1)))
+        if (expression is MiniKotlinParser.EqualityExprContext) return (containsFunctionCall(expression.expression(0)) || containsFunctionCall(expression.expression(1)))
+        if (expression is MiniKotlinParser.AndExprContext) return (containsFunctionCall(expression.expression(0)) || containsFunctionCall(expression.expression(1)))
+        if (expression is MiniKotlinParser.OrExprContext) return (containsFunctionCall(expression.expression(0)) || containsFunctionCall(expression.expression(1)))
+
+        return false
+    }
+
+    fun convertComplexExpression(expression: MiniKotlinParser.ExpressionContext) : String {
+        return "some complex expression;"
+    }
+
+    fun convertSimpleExpression(expression: MiniKotlinParser.ExpressionContext) : String {
+        if (expression is MiniKotlinParser.PrimaryExprContext)
+        {
+            return convertPrimaryExpression(expression.primary())
+        }
+        if (expression is MiniKotlinParser.NotExprContext)
+        {
+            return "!(${convertExpressionStatement(expression.expression())})"
+        }
+        if (expression is MiniKotlinParser.MulDivExprContext)
+        {
+            val operator = expression.getChild(1).text
+            return "(${convertExpressionStatement(expression.expression(0))} $operator ${convertExpressionStatement(expression.expression(1))})"
+        }
+        if (expression is MiniKotlinParser.AddSubExprContext)
+        {
+            val operator = expression.getChild(1).text
+            return "(${convertExpressionStatement(expression.expression(0))} $operator ${convertExpressionStatement(expression.expression(1))})"
+        }
+        if (expression is MiniKotlinParser.ComparisonExprContext)
+        {
+            val operator = expression.getChild(1).text
+            return "(${convertExpressionStatement(expression.expression(0))} $operator ${convertExpressionStatement(expression.expression(1))})"
+        }
+        if (expression is MiniKotlinParser.OrExprContext)
+        {
+            return "(${convertExpressionStatement(expression.expression(0))} || ${convertExpressionStatement(expression.expression(1))})"
+        }
+        if (expression is MiniKotlinParser.AndExprContext)
+        {
+            return "(${convertExpressionStatement(expression.expression(0))} && ${convertExpressionStatement(expression.expression(1))})"
+        }
+        if (expression is MiniKotlinParser.EqualityExprContext)
+        {
+            val operator = expression.getChild(1).text
+            if (operator == "==") {
+                return "(${convertExpressionStatement(expression.expression(0))}.equals(${convertExpressionStatement(expression.expression(1))}))"
+            }
+            else if (operator == "!=") {
+                return "!(${convertExpressionStatement(expression.expression(0))}.equals(${convertExpressionStatement(expression.expression(1))}))"
+            }
+        }
+
+
+        error("unrecognized expression: $expression")
+    }
+
+    fun convertPrimaryExpression(primary: MiniKotlinParser.PrimaryContext) : String {
+        if (primary is MiniKotlinParser.IntLiteralContext)
+        {
+            return primary.INTEGER_LITERAL().text
+        }
+        if (primary is MiniKotlinParser.StringLiteralContext)
+        {
+            return primary.STRING_LITERAL().text
+        }
+        if (primary is MiniKotlinParser.BoolLiteralContext)
+        {
+            return primary.BOOLEAN_LITERAL().text
+        }
+        if (primary is MiniKotlinParser.IdentifierExprContext)
+        {
+            return primary.IDENTIFIER().text
+        }
+        if (primary is MiniKotlinParser.ParenExprContext)
+        {
+            return convertExpressionStatement(primary.expression())
+        }
+
+        error("unrecognized primary expression: $primary")
     }
 }
