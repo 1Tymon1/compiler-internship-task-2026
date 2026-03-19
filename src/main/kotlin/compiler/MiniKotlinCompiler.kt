@@ -9,7 +9,7 @@ class MiniKotlinCompiler : MiniKotlinBaseVisitor<String>() {
 
         val functions = program.functionDeclaration().joinToString("\n\n")
         {
-            visitFunction(it)
+            convertFunction(it)
         }
 
         val result = """
@@ -21,7 +21,7 @@ class MiniKotlinCompiler : MiniKotlinBaseVisitor<String>() {
         return result
     }
 
-    fun visitFunction(function: MiniKotlinParser.FunctionDeclarationContext): String {
+    fun convertFunction(function: MiniKotlinParser.FunctionDeclarationContext): String {
         val name = function.IDENTIFIER().text
         val returnType = convertType(function.type())
         var arguments = ""
@@ -35,14 +35,12 @@ class MiniKotlinCompiler : MiniKotlinBaseVisitor<String>() {
             arguments += "String[] args"
         }
 
-        val body = visitBody(function.block())
+        val body = convertBody(function.block())
 
         return """public static $returnType $name($arguments){
                 $body
             }
         """.trimMargin()
-
-
     }
 
     fun convertType(type: MiniKotlinParser.TypeContext): String {
@@ -74,7 +72,29 @@ class MiniKotlinCompiler : MiniKotlinBaseVisitor<String>() {
         return result
     }
 
-    fun visitBody(body: MiniKotlinParser.BlockContext): String {
-        return ""
+    fun convertBody(body: MiniKotlinParser.BlockContext): String {
+        val result = body.statement().joinToString("\n"){
+            convertStatement(it)
+        }
+
+        return result
+    }
+
+    fun convertStatement(statement: MiniKotlinParser.StatementContext) : String
+    {
+        if (statement.variableDeclaration() != null)
+        {
+            return convertVariableDeclaration(statement.variableDeclaration())
+        }
+
+        return ";"
+    }
+
+    fun convertVariableDeclaration(variableDeclaration: MiniKotlinParser.VariableDeclarationContext): String {
+        var type = convertType(variableDeclaration.type())
+        var name = variableDeclaration.IDENTIFIER().text
+        var expression = variableDeclaration.expression().text
+
+        return "$type $name = ($expression);"
     }
 }
