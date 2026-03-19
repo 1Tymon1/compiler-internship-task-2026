@@ -114,7 +114,16 @@ class MiniKotlinCompiler : MiniKotlinBaseVisitor<String>() {
         val type = convertType(variableDeclaration.type())
         val name = variableDeclaration.IDENTIFIER().text
 
-        return "$type $name = ${convertExpressionStatement(variableDeclaration.expression())};"
+        if (containsFunctionCall(variableDeclaration.expression())) {
+            val arg = newArg()
+
+            return """${convertExpressionStatement(variableDeclaration.expression(), arg)}
+                ${type} ${name} = ${arg};
+            """.trimIndent()
+        }
+        else {
+            return "$type $name = ${convertExpressionStatement(variableDeclaration.expression())};"
+        }
     }
 
     fun convertReturn(returnStatement: MiniKotlinParser.ReturnStatementContext): String {
@@ -130,10 +139,16 @@ class MiniKotlinCompiler : MiniKotlinBaseVisitor<String>() {
         """.trimMargin()
     }
 
-    fun convertExpressionStatement(expression: MiniKotlinParser.ExpressionContext): String {
+    fun convertExpressionStatement(expression: MiniKotlinParser.ExpressionContext, arg: String = ""): String {
         if (expression is MiniKotlinParser.FunctionCallExprContext)
         {
-            return convertComplexExpression(expression)
+            if (arg == "") {
+                return convertComplexExpression(expression, newArg())
+            }
+            else
+            {
+                return convertComplexExpression(expression, arg)
+            }
         }
         else
         {
@@ -141,28 +156,28 @@ class MiniKotlinCompiler : MiniKotlinBaseVisitor<String>() {
         }
     }
 
-//    fun containsFunctionCall(expression: MiniKotlinParser.ExpressionContext) : Boolean {
-//        if (expression is MiniKotlinParser.FunctionCallExprContext) return true
-//        if (expression is MiniKotlinParser.PrimaryExprContext) return false
-//        if (expression is MiniKotlinParser.NotExprContext) return containsFunctionCall(expression.expression())
-//        if (expression is MiniKotlinParser.AddSubExprContext) return (containsFunctionCall(expression.expression(0)) || containsFunctionCall(expression.expression(1)))
-//        if (expression is MiniKotlinParser.MulDivExprContext) return (containsFunctionCall(expression.expression(0)) || containsFunctionCall(expression.expression(1)))
-//        if (expression is MiniKotlinParser.ComparisonExprContext) return (containsFunctionCall(expression.expression(0)) || containsFunctionCall(expression.expression(1)))
-//        if (expression is MiniKotlinParser.EqualityExprContext) return (containsFunctionCall(expression.expression(0)) || containsFunctionCall(expression.expression(1)))
-//        if (expression is MiniKotlinParser.AndExprContext) return (containsFunctionCall(expression.expression(0)) || containsFunctionCall(expression.expression(1)))
-//        if (expression is MiniKotlinParser.OrExprContext) return (containsFunctionCall(expression.expression(0)) || containsFunctionCall(expression.expression(1)))
-//
-//        return false
-//    }
+    fun containsFunctionCall(expression: MiniKotlinParser.ExpressionContext) : Boolean {
+        if (expression is MiniKotlinParser.FunctionCallExprContext) return true
+        if (expression is MiniKotlinParser.PrimaryExprContext) return false
+        if (expression is MiniKotlinParser.NotExprContext) return containsFunctionCall(expression.expression())
+        if (expression is MiniKotlinParser.AddSubExprContext) return (containsFunctionCall(expression.expression(0)) || containsFunctionCall(expression.expression(1)))
+        if (expression is MiniKotlinParser.MulDivExprContext) return (containsFunctionCall(expression.expression(0)) || containsFunctionCall(expression.expression(1)))
+        if (expression is MiniKotlinParser.ComparisonExprContext) return (containsFunctionCall(expression.expression(0)) || containsFunctionCall(expression.expression(1)))
+        if (expression is MiniKotlinParser.EqualityExprContext) return (containsFunctionCall(expression.expression(0)) || containsFunctionCall(expression.expression(1)))
+        if (expression is MiniKotlinParser.AndExprContext) return (containsFunctionCall(expression.expression(0)) || containsFunctionCall(expression.expression(1)))
+        if (expression is MiniKotlinParser.OrExprContext) return (containsFunctionCall(expression.expression(0)) || containsFunctionCall(expression.expression(1)))
 
-    fun convertComplexExpression(expression: MiniKotlinParser.FunctionCallExprContext) : String {
+        return false
+    }
+
+    fun convertComplexExpression(expression: MiniKotlinParser.FunctionCallExprContext, arg: String) : String {
         val name = mapFunction(expression.IDENTIFIER().text)
         val arguments = expression.argumentList().expression().joinToString(", ") {
             convertExpressionStatement(it)
         }
         openedBrackets++
 
-        return "$name($arguments, (${newArg()}) ->{"
+        return "$name($arguments, ($arg) -> {"
     }
 
     fun convertSimpleExpression(expression: MiniKotlinParser.ExpressionContext) : String {
