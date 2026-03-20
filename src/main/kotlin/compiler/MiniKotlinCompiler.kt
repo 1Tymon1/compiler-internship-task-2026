@@ -10,7 +10,7 @@ class MiniKotlinCompiler : MiniKotlinBaseVisitor<String>() {
     private fun newArg() = "arg${argCounter++}"
 
     // Helper field to count opened curly brackets
-    private var openedBrackets = 0
+    private var openedBrackets: Array<Int> = emptyArray()
 
     fun compile(program: MiniKotlinParser.ProgramContext, className: String = "MiniProgram"): String {
 
@@ -42,7 +42,7 @@ class MiniKotlinCompiler : MiniKotlinBaseVisitor<String>() {
             arguments += "String[] args"
         }
 
-        val body = convertBody(function.block())
+        val body = convertBody(function.block(), 0)
 
         return """public static void $name($arguments){
                 $body
@@ -79,107 +79,95 @@ class MiniKotlinCompiler : MiniKotlinBaseVisitor<String>() {
         return result
     }
 
-    fun convertBody(body: MiniKotlinParser.BlockContext): String {
+    fun convertBody(body: MiniKotlinParser.BlockContext, depth: Int): String {
+        while (openedBrackets.size <= depth)
+        {
+            openedBrackets += arrayOf(0)
+        }
         var result = body.statement().joinToString("\n"){
-            convertStatement(it)
+            convertStatement(it, depth)
         }
 
-        while (openedBrackets > 0) {
-            openedBrackets--
+        while (openedBrackets[depth] > 0) {
+            openedBrackets[depth] = openedBrackets[depth] - 1
             result += "\n});"
         }
 
         return result
     }
 
-    fun convertStatement(statement: MiniKotlinParser.StatementContext) : String
+    fun convertStatement(statement: MiniKotlinParser.StatementContext, depth: Int) : String
     {
         if (statement.variableDeclaration() != null)
         {
-            return convertVariableDeclaration(statement.variableDeclaration())
+            return convertVariableDeclaration(statement.variableDeclaration(), depth)
         }
         if (statement.variableAssignment() != null)
         {
-            return convertVariableAssigment(statement.variableAssignment())
+            return convertVariableAssigment(statement.variableAssignment(), depth)
         }
         if (statement.returnStatement() != null)
         {
-            return convertReturn(statement.returnStatement())
+            return convertReturn(statement.returnStatement(), depth)
         }
         if (statement.expression() != null)
         {
-            return convertExpressionStatement(statement.expression())
+            return convertExpressionStatement(statement.expression(), depth)
         }
         if (statement.ifStatement() != null)
         {
-            return convertIfStatement(statement.ifStatement())
+            return convertIfStatement(statement.ifStatement(), depth)
         }
         if (statement.whileStatement() != null)
         {
-            return convertWhileStatement(statement.whileStatement())
+            return convertWhileStatement(statement.whileStatement(), depth)
         }
 
         return ";"
     }
 
-    fun convertWhileStatement(condition: MiniKotlinParser.WhileStatementContext) : String {
-        val body = convertBody(condition.block())
-        val result = """if(${convertExpressionStatement(condition.expression())}){
-            $body
-        }""".trimIndent()
-
-        return result
-    }
-
-    fun convertIfStatement(condition: MiniKotlinParser.IfStatementContext) : String {
-        var body = convertBody(condition.block(0))
-        var result = """if(${convertExpressionStatement(condition.expression())}){
-            $body
-        }""".trimIndent()
-
-        if (condition.ELSE() != null) {
-            body = convertBody(condition.block().last())
-            result += "\n"
-            result += """else{
-                $body
-            }""".trimIndent()
+    fun convertWhileStatement(condition: MiniKotlinParser.WhileStatementContext, depth: Int) : String {
+        val body = convertBody(condition.block(), depth + 1)
+        return convertComplexExpression(condition.expression(), depth){ conditionExpression ->
+            "while($conditionExpression){\n$body\n}"
         }
 
-        return result
     }
 
-    fun convertVariableDeclaration(variableDeclaration: MiniKotlinParser.VariableDeclarationContext): String {
+    fun convertIfStatement(condition: MiniKotlinParser.IfStatementContext, depth: Int) : String {
+        val ifBody = convertBody(condition.block(0), depth + 1)
+        var elseBody: String = ""
+
+        if (condition.ELSE() != null)
+            elseBody = """ else {
+                ${convertBody(condition.block(1), depth + 1)}
+            }""".trimIndent()
+
+        return convertComplexExpression(condition.expression(), depth){ conditionExpression ->
+            "if($conditionExpression){\n$ifBody\n}\n$elseBody"
+        }
+    }
+
+    fun convertVariableDeclaration(variableDeclaration: MiniKotlinParser.VariableDeclarationContext, depth: Int): String {
         val type = convertType(variableDeclaration.type())
         val name = variableDeclaration.IDENTIFIER().text
+        val expression = variableDeclaration.expression()
 
-        if (containsFunctionCall(variableDeclaration.expression())) {
-            val arg = newArg()
-
-            return """${convertExpressionStatement(variableDeclaration.expression(), arg)}
-                $type $name = $arg;
-            """.trimIndent()
-        }
-        else {
-            return "$type $name = ${convertExpressionStatement(variableDeclaration.expression())};"
+        return convertComplexExpression(expression, depth) { finalExpression ->
+            "$type $name = $finalExpression;"
         }
     }
 
-    fun convertVariableAssigment(variableAssignment: MiniKotlinParser.VariableAssignmentContext): String {
+    fun convertVariableAssigment(variableAssignment: MiniKotlinParser.VariableAssignmentContext, depth: Int): String {
         val name = variableAssignment.IDENTIFIER().text
+        val expression = variableAssignment.expression()
 
-        if (containsFunctionCall(variableAssignment.expression())) {
-            val arg = newArg()
-
-            return """${convertExpressionStatement(variableAssignment.expression(), arg)}
-                $name = $arg;
-            """.trimIndent()
-        }
-        else {
-            return "$name = ${convertExpressionStatement(variableAssignment.expression())};"
+        return convertComplexExpression(expression, depth) { finalExpression ->
+            "$name = $finalExpression;"
         }
     }
 
-    fun convertReturn(returnStatement: MiniKotlinParser.ReturnStatementContext): String {
+    fun convertReturn(returnStatement: MiniKotlinParser.ReturnStatementContext, depth: Int): String {
         if (returnStatement.expression() == null)
         {
             return """__continuation.accept(null);
@@ -189,130 +177,26 @@ class MiniKotlinCompiler : MiniKotlinBaseVisitor<String>() {
 
         if (containsFunctionCall(returnStatement.expression()))
         {
-            val arg = newArg()
-            val buildResult = buildComplexReturn(returnStatement.expression(), arg)
-            return """${isolateFunctionCall(returnStatement.expression(), arg)}
-                __continuation.accept(${buildResult});
-                return;
-            """.trimIndent()
+            return convertComplexExpression(returnStatement.expression(), depth) { finalExpression ->
+                "__continuation.accept($finalExpression);\nreturn;"
+            }
         }
 
-        return """__continuation.accept(${convertExpressionStatement(returnStatement.expression())});
+        return """__continuation.accept(${convertExpressionStatement(returnStatement.expression(), depth)});
             return;
         """.trimMargin()
     }
 
-    fun buildComplexReturn(expression: MiniKotlinParser.ExpressionContext, arg: String): String {
-        if (expression is MiniKotlinParser.FunctionCallExprContext)
+
+    fun convertExpressionStatement(expression: MiniKotlinParser.ExpressionContext, depth: Int): String {
+        if (containsFunctionCall(expression))
         {
-            return arg
-        }
-        if (expression is MiniKotlinParser.MulDivExprContext)
-        {
-            val operator = expression.getChild(1).text
-            val left = expression.expression(0)
-            val right = expression.expression(1)
+            return convertComplexExpression(expression, depth) {""}
 
-            if (containsFunctionCall(left))
-                return "(${buildComplexReturn(left, arg)} $operator ${convertExpressionStatement(right)})"
-            else
-                return "(${convertExpressionStatement(left)} $operator ${buildComplexReturn(right, arg)})"
-        }
-        if (expression is MiniKotlinParser.AddSubExprContext)
-        {
-            val operator = expression.getChild(1).text
-            val left = expression.expression(0)
-            val right = expression.expression(1)
-
-            if (containsFunctionCall(left))
-                return "(${buildComplexReturn(left, arg)} $operator ${convertExpressionStatement(right)})"
-            else
-                return "(${convertExpressionStatement(left)} $operator ${buildComplexReturn(right, arg)})"
-        }
-        if (expression is MiniKotlinParser.ComparisonExprContext)
-        {
-            val operator = expression.getChild(1).text
-            val left = expression.expression(0)
-            val right = expression.expression(1)
-
-            if (containsFunctionCall(left))
-                return "(${buildComplexReturn(left, arg)} $operator ${convertExpressionStatement(right)})"
-            else
-                return "(${convertExpressionStatement(left)} $operator ${buildComplexReturn(right, arg)})"
-        }
-        if (expression is MiniKotlinParser.EqualityExprContext)
-        {
-            val operator = expression.getChild(1).text
-            val left = expression.expression(0)
-            val right = expression.expression(1)
-            var result = ""
-
-            if (containsFunctionCall(left))
-                result = "(${buildComplexReturn(left, arg)}.equals(${convertExpressionStatement(right)}))"
-            else
-                result = "(${convertExpressionStatement(left)}.equals(${buildComplexReturn(right, arg)}))"
-
-            if (operator != "==")
-                result = "!$result"
-
-            return result
-        }
-        if (expression is MiniKotlinParser.OrExprContext)
-        {
-            val left = expression.expression(0)
-            val right = expression.expression(1)
-
-            if (containsFunctionCall(left))
-                return "(${buildComplexReturn(left, arg)} || ${convertExpressionStatement(right)})"
-            else
-                return "(${convertExpressionStatement(left)} || ${buildComplexReturn(right, arg)})"
-        }
-        if (expression is MiniKotlinParser.AndExprContext)
-        {
-            val left = expression.expression(0)
-            val right = expression.expression(1)
-
-            if (containsFunctionCall(left))
-                return "(${buildComplexReturn(left, arg)} && ${convertExpressionStatement(right)})"
-            else
-                return "(${convertExpressionStatement(left)} && ${buildComplexReturn(right, arg)})"
-        }
-        if (expression is MiniKotlinParser.NotExprContext)
-        {
-            return "!(${buildComplexReturn(expression.expression(), arg)})"
-        }
-
-        return arg
-    }
-
-    fun isolateFunctionCall(expression: MiniKotlinParser.ExpressionContext, arg: String) : String {
-        if (expression is MiniKotlinParser.FunctionCallExprContext) return convertExpressionStatement(expression, arg)
-        if (expression is MiniKotlinParser.PrimaryExprContext) return ""
-        if (expression is MiniKotlinParser.NotExprContext) return isolateFunctionCall(expression.expression(), arg)
-        if (expression is MiniKotlinParser.AddSubExprContext) return (isolateFunctionCall(expression.expression(0), arg) + isolateFunctionCall(expression.expression(1), arg))
-        if (expression is MiniKotlinParser.MulDivExprContext) return (isolateFunctionCall(expression.expression(0), arg) + isolateFunctionCall(expression.expression(1), arg))
-        if (expression is MiniKotlinParser.ComparisonExprContext) return (isolateFunctionCall(expression.expression(0), arg) + isolateFunctionCall(expression.expression(1), arg))
-        if (expression is MiniKotlinParser.EqualityExprContext) return (isolateFunctionCall(expression.expression(0), arg) + isolateFunctionCall(expression.expression(1), arg))
-        if (expression is MiniKotlinParser.AndExprContext) return (isolateFunctionCall(expression.expression(0), arg) + isolateFunctionCall(expression.expression(1), arg))
-        if (expression is MiniKotlinParser.OrExprContext) return (isolateFunctionCall(expression.expression(0), arg) + isolateFunctionCall(expression.expression(1), arg))
-
-        return ""
-    }
-
-    fun convertExpressionStatement(expression: MiniKotlinParser.ExpressionContext, arg: String = ""): String {
-        if (expression is MiniKotlinParser.FunctionCallExprContext)
-        {
-            if (arg == "") {
-                return convertComplexExpression(expression, newArg())
-            }
-            else
-            {
-                return convertComplexExpression(expression, arg)
-            }
         }
         else
         {
-            return convertSimpleExpression(expression)
+            return convertSimpleExpression(expression, depth)
         }
     }
 
@@ -330,57 +214,170 @@ class MiniKotlinCompiler : MiniKotlinBaseVisitor<String>() {
         return false
     }
 
-    fun convertComplexExpression(expression: MiniKotlinParser.FunctionCallExprContext, arg: String) : String {
-        val name = mapFunction(expression.IDENTIFIER().text)
-        val arguments = expression.argumentList().expression().joinToString(", ") {
-            convertExpressionStatement(it)
+    fun convertComplexExpression(expression: MiniKotlinParser.ExpressionContext, depth: Int, continuation: (String) -> String) : String {
+        val functionCalls = collectFunctionCalls(expression)
+        if (functionCalls.isEmpty()){
+            return continuation(convertSimpleExpression(expression, depth))
         }
-        openedBrackets++
 
-        return "$name($arguments, ($arg) -> {"
+        val argumentHashMap: HashMap<Int, String> = HashMap()
+        for (functionCall in functionCalls)
+        {
+            argumentHashMap[System.identityHashCode(functionCall)] = newArg()
+        }
+
+        val finalExpression = substituteArguments(expression, argumentHashMap, depth)
+
+        var result = continuation(finalExpression)
+        for (i in functionCalls.size - 1 downTo 0)
+        {
+            val arg = argumentHashMap[System.identityHashCode(functionCalls[i])]
+            val functionName = mapFunction(functionCalls[i].IDENTIFIER().text)
+            val functionArguments = functionCalls[i].argumentList().expression().joinToString(", ") { substituteArguments(it, argumentHashMap, depth) }
+
+            if (functionName != "")
+            {
+                result = "$functionName($functionArguments, ($arg) -> {\n$result"
+            }
+            openedBrackets[depth]++
+        }
+
+        return result
     }
 
-    fun convertSimpleExpression(expression: MiniKotlinParser.ExpressionContext) : String {
-        if (expression is MiniKotlinParser.PrimaryExprContext)
+    fun collectFunctionCalls(expression: MiniKotlinParser.ExpressionContext) : List<MiniKotlinParser.FunctionCallExprContext> {
+        if (expression is MiniKotlinParser.FunctionCallExprContext)
         {
-            return convertPrimaryExpression(expression.primary())
+            val argumentCalls: MutableList<MiniKotlinParser.FunctionCallExprContext> = mutableListOf()
+            for (expression in expression.argumentList().expression())
+            {
+                argumentCalls += collectFunctionCalls(expression)
+            }
+            return argumentCalls + listOf(expression)
         }
         if (expression is MiniKotlinParser.NotExprContext)
         {
-            return "!(${convertExpressionStatement(expression.expression())})"
+            return collectFunctionCalls(expression.expression())
+        }
+        if (expression is MiniKotlinParser.MulDivExprContext)
+        {
+            return collectFunctionCalls(expression.expression(0)) + collectFunctionCalls(expression.expression(1))
+        }
+        if (expression is MiniKotlinParser.AddSubExprContext)
+        {
+            return collectFunctionCalls(expression.expression(0)) + collectFunctionCalls(expression.expression(1))
+        }
+        if (expression is MiniKotlinParser.ComparisonExprContext)
+        {
+            return collectFunctionCalls(expression.expression(0)) + collectFunctionCalls(expression.expression(1))
+        }
+        if (expression is MiniKotlinParser.EqualityExprContext)
+        {
+            return collectFunctionCalls(expression.expression(0)) + collectFunctionCalls(expression.expression(1))
+        }
+        if (expression is MiniKotlinParser.AndExprContext)
+        {
+            return collectFunctionCalls(expression.expression(0)) + collectFunctionCalls(expression.expression(1))
+        }
+        if (expression is MiniKotlinParser.OrExprContext)
+        {
+            return collectFunctionCalls(expression.expression(0)) + collectFunctionCalls(expression.expression(1))
+        }
+        if (expression is MiniKotlinParser.PrimaryExprContext)
+        {
+            val primary = expression.primary()
+            if (primary is MiniKotlinParser.ParenExprContext)
+                return collectFunctionCalls(primary.expression())
+        }
+
+        return emptyList()
+    }
+
+    fun substituteArguments(expression: MiniKotlinParser.ExpressionContext, argumentMap: Map<Int, String>, depth: Int) : String {
+        if (expression is MiniKotlinParser.FunctionCallExprContext)
+        {
+            return argumentMap[System.identityHashCode(expression)] ?: error("Call from outside of the map")
+        }
+        if (expression is MiniKotlinParser.PrimaryExprContext)
+        {
+            return convertSimpleExpression(expression, depth)
         }
         if (expression is MiniKotlinParser.MulDivExprContext)
         {
             val operator = expression.getChild(1).text
-            return "(${convertExpressionStatement(expression.expression(0))} $operator ${convertExpressionStatement(expression.expression(1))})"
+            return "(${substituteArguments(expression.expression(0), argumentMap, depth)} $operator ${substituteArguments(expression.expression(1), argumentMap, depth)})"
         }
         if (expression is MiniKotlinParser.AddSubExprContext)
         {
             val operator = expression.getChild(1).text
-            return "(${convertExpressionStatement(expression.expression(0))} $operator ${convertExpressionStatement(expression.expression(1))})"
+            return "(${substituteArguments(expression.expression(0), argumentMap, depth)} $operator ${substituteArguments(expression.expression(1), argumentMap, depth)})"
         }
         if (expression is MiniKotlinParser.ComparisonExprContext)
         {
             val operator = expression.getChild(1).text
-            return "(${convertExpressionStatement(expression.expression(0))} $operator ${convertExpressionStatement(expression.expression(1))})"
-        }
-        if (expression is MiniKotlinParser.OrExprContext)
-        {
-            return "(${convertExpressionStatement(expression.expression(0))} || ${convertExpressionStatement(expression.expression(1))})"
-        }
-        if (expression is MiniKotlinParser.AndExprContext)
-        {
-            return "(${convertExpressionStatement(expression.expression(0))} && ${convertExpressionStatement(expression.expression(1))})"
+            return "(${substituteArguments(expression.expression(0), argumentMap, depth)} $operator ${substituteArguments(expression.expression(1), argumentMap, depth)})"
         }
         if (expression is MiniKotlinParser.EqualityExprContext)
         {
             val operator = expression.getChild(1).text
-            if (operator == "==") {
-                return "(${convertExpressionStatement(expression.expression(0))}.equals(${convertExpressionStatement(expression.expression(1))}))"
-            }
-            else if (operator == "!=") {
-                return "!(${convertExpressionStatement(expression.expression(0))}.equals(${convertExpressionStatement(expression.expression(1))}))"
-            }
+            val left = substituteArguments(expression.expression(0), argumentMap, depth)
+            val right = substituteArguments(expression.expression(1), argumentMap, depth)
+            return "($left) $operator ($right)"
+        }
+        if (expression is MiniKotlinParser.AndExprContext)
+        {
+            return "(${substituteArguments(expression.expression(0), argumentMap, depth)} && ${substituteArguments(expression.expression(1), argumentMap, depth)
+            })"
+        }
+        if (expression is MiniKotlinParser.OrExprContext)
+        {
+            return "(${substituteArguments(expression.expression(0), argumentMap, depth)} || ${substituteArguments(expression.expression(1), argumentMap, depth)})"
+        }
+        if (expression is MiniKotlinParser.NotExprContext)
+        {
+            return "!(${substituteArguments(expression.expression(), argumentMap, depth)})"
+        }
+
+        error("Unknown expression in substituteArguments: $expression")
+    }
+
+    fun convertSimpleExpression(expression: MiniKotlinParser.ExpressionContext, depth: Int) : String {
+        if (expression is MiniKotlinParser.PrimaryExprContext)
+        {
+            return convertPrimaryExpression(expression.primary(), depth)
+        }
+        if (expression is MiniKotlinParser.NotExprContext)
+        {
+            return "!(${convertExpressionStatement(expression.expression(), depth)})"
+        }
+        if (expression is MiniKotlinParser.MulDivExprContext)
+        {
+            val operator = expression.getChild(1).text
+            return "(${convertExpressionStatement(expression.expression(0), depth)} $operator ${convertExpressionStatement(expression.expression(1), depth)})"
+        }
+        if (expression is MiniKotlinParser.AddSubExprContext)
+        {
+            val operator = expression.getChild(1).text
+            return "(${convertExpressionStatement(expression.expression(0), depth)} $operator ${convertExpressionStatement(expression.expression(1), depth)})"
+        }
+        if (expression is MiniKotlinParser.ComparisonExprContext)
+        {
+            val operator = expression.getChild(1).text
+            return "(${convertExpressionStatement(expression.expression(0), depth)} $operator ${convertExpressionStatement(expression.expression(1), depth)})"
+        }
+        if (expression is MiniKotlinParser.OrExprContext)
+        {
+            return "(${convertExpressionStatement(expression.expression(0), depth)} || ${convertExpressionStatement(expression.expression(1), depth)})"
+        }
+        if (expression is MiniKotlinParser.AndExprContext)
+        {
+            return "(${convertExpressionStatement(expression.expression(0), depth)} && ${convertExpressionStatement(expression.expression(1), depth)})"
+        }
+        if (expression is MiniKotlinParser.EqualityExprContext)
+        {
+            val operator = expression.getChild(1).text
+            return "((${convertExpressionStatement(expression.expression(0), depth)}) $operator (${convertExpressionStatement(expression.expression(1), depth)}))"
+
         }
 
 
@@ -395,7 +392,7 @@ class MiniKotlinCompiler : MiniKotlinBaseVisitor<String>() {
         return function
     }
 
-    fun convertPrimaryExpression(primary: MiniKotlinParser.PrimaryContext) : String {
+    fun convertPrimaryExpression(primary: MiniKotlinParser.PrimaryContext, depth: Int) : String {
         if (primary is MiniKotlinParser.IntLiteralContext)
         {
             return primary.INTEGER_LITERAL().text
@@ -414,7 +411,7 @@ class MiniKotlinCompiler : MiniKotlinBaseVisitor<String>() {
         }
         if (primary is MiniKotlinParser.ParenExprContext)
         {
-            return convertExpressionStatement(primary.expression())
+            return convertExpressionStatement(primary.expression(), depth)
         }
 
         error("unrecognized primary expression: $primary")
