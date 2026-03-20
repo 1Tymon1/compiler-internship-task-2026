@@ -98,6 +98,10 @@ class MiniKotlinCompiler : MiniKotlinBaseVisitor<String>() {
         {
             return convertVariableDeclaration(statement.variableDeclaration())
         }
+        if (statement.variableAssignment() != null)
+        {
+            return convertVariableAssigment(statement.variableAssignment())
+        }
         if (statement.returnStatement() != null)
         {
             return convertReturn(statement.returnStatement())
@@ -110,8 +114,21 @@ class MiniKotlinCompiler : MiniKotlinBaseVisitor<String>() {
         {
             return convertIfStatement(statement.ifStatement())
         }
+        if (statement.whileStatement() != null)
+        {
+            return convertWhileStatement(statement.whileStatement())
+        }
 
         return ";"
+    }
+
+    fun convertWhileStatement(condition: MiniKotlinParser.WhileStatementContext) : String {
+        val body = convertBody(condition.block())
+        val result = """if(${convertExpressionStatement(condition.expression())}){
+            $body
+        }""".trimIndent()
+
+        return result
     }
 
     fun convertIfStatement(condition: MiniKotlinParser.IfStatementContext) : String {
@@ -139,11 +156,26 @@ class MiniKotlinCompiler : MiniKotlinBaseVisitor<String>() {
             val arg = newArg()
 
             return """${convertExpressionStatement(variableDeclaration.expression(), arg)}
-                ${type} ${name} = ${arg};
+                $type $name = $arg;
             """.trimIndent()
         }
         else {
             return "$type $name = ${convertExpressionStatement(variableDeclaration.expression())};"
+        }
+    }
+
+    fun convertVariableAssigment(variableAssignment: MiniKotlinParser.VariableAssignmentContext): String {
+        val name = variableAssignment.IDENTIFIER().text
+
+        if (containsFunctionCall(variableAssignment.expression())) {
+            val arg = newArg()
+
+            return """${convertExpressionStatement(variableAssignment.expression(), arg)}
+                $name = $arg;
+            """.trimIndent()
+        }
+        else {
+            return "$name = ${convertExpressionStatement(variableAssignment.expression())};"
         }
     }
 
