@@ -44,7 +44,7 @@ class MiniKotlinCompiler : MiniKotlinBaseVisitor<String>() {
 
         val body = convertBody(function.block())
 
-        return """public static $returnType $name($arguments){
+        return """public static void $name($arguments){
                 $body
             }
         """.trimMargin()
@@ -106,8 +106,29 @@ class MiniKotlinCompiler : MiniKotlinBaseVisitor<String>() {
         {
             return convertExpressionStatement(statement.expression())
         }
+        if (statement.ifStatement() != null)
+        {
+            return convertIfStatement(statement.ifStatement())
+        }
 
         return ";"
+    }
+
+    fun convertIfStatement(condition: MiniKotlinParser.IfStatementContext) : String {
+        var body = convertBody(condition.block(0))
+        var result = """if(${convertExpressionStatement(condition.expression())}){
+            $body
+        }""".trimIndent()
+
+        if (condition.ELSE() != null) {
+            body = convertBody(condition.block().last())
+            result += "\n"
+            result += """else{
+                $body
+            }""".trimIndent()
+        }
+
+        return result
     }
 
     fun convertVariableDeclaration(variableDeclaration: MiniKotlinParser.VariableDeclarationContext): String {
