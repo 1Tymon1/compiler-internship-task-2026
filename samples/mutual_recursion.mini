@@ -1,0 +1,53 @@
+// Tests mutually recursive functions and deeper call chains
+
+fun isEven(n: Int): Boolean {
+    if (n == 0) {
+        return true
+    } else {
+        return isOdd(n - 1)
+    }
+}
+
+fun isOdd(n: Int): Boolean {
+    if (n == 0) {
+        return false
+    } else {
+        return isEven(n - 1)
+    }
+}
+
+fun fib(n: Int): Int {
+    if (n <= 1) {
+        return n
+    } else {
+        return fib(n - 1) + fib(n - 2)
+    }
+}
+
+fun main(): Unit {
+    // isEven(4) = true
+    var a: Boolean = isEven(4)
+    println(a)
+
+    // isOdd(7) = true
+    var b: Boolean = isOdd(7)
+    println(b)
+
+    // isEven(3) = false
+    var c: Boolean = isEven(3)
+    println(c)
+
+    // fib(0)=0, fib(1)=1, fib(7)=13
+    var f0: Int = fib(0)
+    println(f0)
+
+    var f1: Int = fib(1)
+    println(f1)
+
+    var f7: Int = fib(7)
+    println(f7)
+
+    // fib(fib(4)) = fib(3) = 2
+    var nested: Int = fib(fib(4))
+    println(nested)
+}

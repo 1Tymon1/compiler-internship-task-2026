@@ -1,0 +1,30 @@
+// Tests all arithmetic operators and nested expressions
+fun add(a: Int, b: Int): Int {
+    return a + b
+}
+
+fun multiply(a: Int, b: Int): Int {
+    return a * b
+}
+
+fun main(): Unit {
+    // Basic operators: 3 + 4 = 7
+    var a: Int = 3 + 4
+    println(a)
+
+    // Operator precedence: 2 + 3 * 4 = 14
+    var b: Int = 2 + 3 * 4
+    println(b)
+
+    // Subtraction and division: 20 / 4 - 1 = 4
+    var c: Int = 20 / 4 - 1
+    println(c)
+
+    // Modulo: 17 % 5 = 2
+    var d: Int = 17 % 5
+    println(d)
+
+    // Nested calls: add(2, 3) * multiply(2, 3) = 5 * 6 = 30
+    var e: Int = multiply(add(2, 3), multiply(2, 3))
+    println(e)
+}

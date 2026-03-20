@@ -1,0 +1,60 @@
+// Tests if/else including nested ifs and function calls in conditions
+
+fun abs(n: Int): Int {
+    if (n < 0) {
+        return 0 - n
+    } else {
+        return n
+    }
+}
+
+fun max(a: Int, b: Int): Int {
+    if (a > b) {
+        return a
+    } else {
+        return b
+    }
+}
+
+fun classify(n: Int): Int {
+    if (n < 0) {
+        return 0 - 1
+    } else {
+        if (n == 0) {
+            return 0
+        } else {
+            return 1
+        }
+    }
+}
+
+fun main(): Unit {
+    // abs(-7) = 7
+    var a: Int = abs(0 - 7)
+    println(a)
+
+    // max(3, 8) = 8
+    var b: Int = max(3, 8)
+    println(b)
+
+    // max of two calls: max(abs(-3), abs(-9)) = max(3,9) = 9
+    var c: Int = max(abs(0 - 3), abs(0 - 9))
+    println(c)
+
+    // classify: negative → -1, zero → 0, positive → 1
+    var d: Int = classify(0 - 5)
+    println(d)
+
+    var e: Int = classify(0)
+    println(e)
+
+    var f: Int = classify(5)
+    println(f)
+
+    // if with call in condition: if (max(2,3) == 3) print 1 else print 0
+    if (max(2, 3) == 3) {
+        println(1)
+    } else {
+        println(0)
+    }
+}

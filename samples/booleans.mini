@@ -1,0 +1,38 @@
+// Tests boolean operators, equality, and comparisons
+fun isPositive(n: Int): Boolean {
+    return n > 0
+}
+
+fun isEven(n: Int): Boolean {
+    return n % 2 == 0
+}
+
+fun main(): Unit {
+    // Basic comparisons
+    var a: Boolean = 5 > 3
+    println(a)
+
+    // Equality on integers: 2 + 2 == 4 → true
+    var b: Boolean = 2 + 2 == 4
+    println(b)
+
+    // NOT operator
+    var c: Boolean = !false
+    println(c)
+
+    // AND: true && false = false
+    var d: Boolean = 5 > 3 && 2 > 10
+    println(d)
+
+    // OR: false || true = true
+    var e: Boolean = 2 > 10 || 5 > 3
+    println(e)
+
+    // Calls inside boolean expressions: isPositive(5) && isEven(4) = true
+    var f: Boolean = isPositive(5) && isEven(4)
+    println(f)
+
+    // NEQ: 5 != 3 → true
+    var g: Boolean = 5 != 3
+    println(g)
+}

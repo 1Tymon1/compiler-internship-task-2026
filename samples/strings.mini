@@ -1,0 +1,29 @@
+// Tests string variables and printing
+
+fun greet(flag: Boolean): Int {
+    if (flag) {
+        println("hello")
+        return 1
+    } else {
+        println("goodbye")
+        return 0
+    }
+}
+
+fun main(): Unit {
+    // Simple string print
+    println("start")
+
+    // String variable
+    var s: String = "world"
+    println(s)
+
+    // Call that prints based on a boolean
+    var r: Int = greet(true)
+    println(r)
+
+    var r2: Int = greet(false)
+    println(r2)
+
+    println("end")
+}

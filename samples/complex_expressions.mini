@@ -1,0 +1,44 @@
+// Tests complex expression forms: calls on both sides of operators,
+// calls as arguments to calls, deeply nested expressions
+
+fun double(n: Int): Int {
+    return n * 2
+}
+
+fun inc(n: Int): Int {
+    return n + 1
+}
+
+fun add(a: Int, b: Int): Int {
+    return a + b
+}
+
+fun main(): Unit {
+    // Call on both sides of +: double(3) + double(4) = 6 + 8 = 14
+    var a: Int = double(3) + double(4)
+    println(a)
+
+    // Call result used in further arithmetic: double(5) * 3 = 30
+    var b: Int = double(5) * 3
+    println(b)
+
+    // Two calls as arguments: add(double(3), inc(4)) = add(6,5) = 11
+    var c: Int = add(double(3), inc(4))
+    println(c)
+
+    // Deeply nested: double(double(double(1))) = 8
+    var d: Int = double(double(double(1)))
+    println(d)
+
+    // Call result in comparison: double(5) == 10 → true
+    var e: Boolean = double(5) == 10
+    println(e)
+
+    // Call on both sides of comparison: double(3) < double(4) → true
+    var f: Boolean = double(3) < double(4)
+    println(f)
+
+    // Mixed: inc(double(3)) + double(inc(3)) = 7 + 8 = 15
+    var g: Int = inc(double(3)) + double(inc(3))
+    println(g)
+}
